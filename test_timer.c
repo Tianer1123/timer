@@ -15,10 +15,10 @@ int main(int argc, char *argv[])
 {
 	init_timers(1);
 
+	// 如果缓存 session 信息，每个 session 都应该有一个自己的 tiemr。
 	struct timer_list timer;
 
 	init_timer(&timer);
-
 	setup_timer(&timer, fun_test, (unsigned long)&timer);
 	mod_timer(&timer, jiffies + 4);
 
