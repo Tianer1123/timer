@@ -1,5 +1,9 @@
 #ifndef __UTILS_H
 #define __UTILS_H
+#ifdef __cplusplus
+extern "C"{
+#endif
+
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <string.h>
@@ -62,10 +66,14 @@
      ((long)(b) - (long)(a) < 0))
 #define time_before(a,b)    time_after(b,a)
 
+#if 0
 #define time_after_eq(a,b)  \
     (typecheck(unsigned long, a) && \
      typecheck(unsigned long, b) && \
      ((long)(a) - (long)(b) >= 0))
+#endif
+#define time_after_eq(a,b)  \
+	((long)(a) - (long)(b) >= 0)
 #define time_before_eq(a,b) time_after_eq(b,a)
 
 /*
@@ -123,4 +131,7 @@
 
 #define BITS_PER_LONG __WORDSIZE
 
+#ifdef __cplusplus
+}
+#endif
 #endif /* __UTILS_H */

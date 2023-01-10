@@ -1,5 +1,9 @@
 #ifndef _LINUX_LIST_H
 #define _LINUX_LIST_H
+#ifdef __cplusplus
+extern "C"{
+#endif
+
 //#include <stdlib.h>
 //#include <sys/types.h>
 #include <stdint.h>
@@ -26,8 +30,8 @@
  * under normal circumstances, used to verify that nobody uses
  * non-initialized list entries.
  */
-#define LIST_POISON1  ((void *) 0x00100100 + POISON_POINTER_DELTA)
-#define LIST_POISON2  ((void *) 0x00200200 + POISON_POINTER_DELTA)
+// #define LIST_POISON1  ((void *) 0x00100100 + POISON_POINTER_DELTA)
+// #define LIST_POISON2  ((void *) 0x00200200 + POISON_POINTER_DELTA)
 
 #define container_of(ptr, type, member) ({	 \
     typeof( ((type *)0)->member ) *__mptr = (ptr); \
@@ -44,6 +48,11 @@ struct hlist_head {
 struct hlist_node {
     struct hlist_node *next, **pprev;
 };
+#define LIST_POISON1  ((struct list_head *) 0x00100100 + POISON_POINTER_DELTA)
+#define LIST_POISON2  ((struct list_head *) 0x00200200 + POISON_POINTER_DELTA)
+#define LIST_POISON3  ((struct hlist_node *) 0x00100100 + POISON_POINTER_DELTA)
+#define LIST_POISON4  ((struct hlist_node **) 0x00200200 + POISON_POINTER_DELTA)
+
 #if 0
 /**
  * struct callback_head - callback structure for use with RCU and task_work
@@ -669,8 +678,8 @@ static inline void __hlist_del(struct hlist_node *n)
 static inline void hlist_del(struct hlist_node *n)
 {
     __hlist_del(n);
-    n->next = LIST_POISON1;
-    n->pprev = LIST_POISON2;
+    n->next = LIST_POISON3;
+    n->pprev = LIST_POISON4;
 }
 
 static inline void hlist_del_init(struct hlist_node *n)
@@ -813,4 +822,7 @@ int list_rem_next(list_t *list, listelmt *element, void **data);
 #define list_data(element) ((element)->data)
 #define list_next(element) ((element)->next)
 
+#ifdef __cplusplus
+}
+#endif
 #endif

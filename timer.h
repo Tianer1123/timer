@@ -1,11 +1,14 @@
-#ifndef _LINUX_TIMER_H
-#define _LINUX_TIMER_H
+#ifndef _LINUX_TIMER_H_
+#define _LINUX_TIMER_H_
+#ifdef __cplusplus
+extern "C"{
+#endif
 #include <stdint.h>
 #include <sys/time.h>
 #include "list.h"
 
 // extern volatile long jiffies;
-static inline uint_fast64_t time_jiffies(void)
+static inline time_t time_jiffies(void)
 {
 		struct timeval tv;
 		gettimeofday(&tv, NULL);
@@ -22,6 +25,7 @@ struct timer_list {
 
 	void (*function)(unsigned long);
 	unsigned long data;
+	uint32_t core_id;
 	struct tvec_base *base;
 };
 
@@ -98,7 +102,7 @@ static inline int timer_pending(const struct timer_list * timer)
 	return timer->entry.next != NULL;
 }
 
-extern void add_timer_on(struct timer_list *timer);
+extern void add_timer_on(struct timer_list *timer, int cpu);
 extern int del_timer(struct timer_list * timer);
 extern int mod_timer(struct timer_list *timer, unsigned long expires);
 extern int mod_timer_pending(struct timer_list *timer, unsigned long expires);
@@ -118,6 +122,9 @@ extern int del_timer_sync(struct timer_list *timer);
 #define del_singleshot_timer_sync(t) del_timer_sync(t)
 
 extern void init_timers(unsigned thread_num);
-void run_local_timers( __attribute__((unused)) void *arg);
+void run_local_timers( __attribute__((unused)) void *arg, uint8_t cpu);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

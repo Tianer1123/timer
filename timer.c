@@ -52,7 +52,7 @@ struct tvec_base {
 	struct tvec tv5;
 } __rte_cache_aligned;
 
-static struct tvec_base *tvec_bases;
+static struct tvec_base *tvec_bases[16];
 
 struct timeval tv;
 
@@ -77,17 +77,17 @@ static inline struct tvec_base *tbase_get_base(struct tvec_base *base)
 static inline void timer_set_deferrable(struct timer_list *timer)
 {
 	timer->base = ((struct tvec_base *)((unsigned long)(timer->base) |
-				       TBASE_DEFERRABLE_FLAG));
+				TBASE_DEFERRABLE_FLAG));
 }
 
-static inline void
+	static inline void
 timer_set_base(struct timer_list *timer, struct tvec_base *new_base)
 {
 	timer->base = (struct tvec_base *)((unsigned long)(new_base) |
-				      tbase_get_deferrable(timer->base));
+			tbase_get_deferrable(timer->base));
 }
 static inline void set_running_timer(struct tvec_base *base,
-					struct timer_list *timer)
+		struct timer_list *timer)
 {
 	base->running_timer = timer;
 }
@@ -136,10 +136,11 @@ static void internal_add_timer(struct tvec_base *base, struct timer_list *timer)
 
 
 static void __init_timer(struct timer_list *timer,
-			 const char *name)
+		const char *name)
 {
 	timer->entry.next = NULL;
-	timer->base = tvec_bases;
+	uint8_t cpu = timer->core_id;
+	timer->base = tvec_bases[cpu];
 }
 
 /**
@@ -153,20 +154,20 @@ static void __init_timer(struct timer_list *timer,
  * other timer functions.
  */
 void init_timer_key(struct timer_list *timer,
-		    const char *name)
+		const char *name)
 {
 	__init_timer(timer, name);
 }
 
 void init_timer_deferrable_key(struct timer_list *timer,
-			       const char *name)
+		const char *name)
 {
 	init_timer_key(timer, name);
 	timer_set_deferrable(timer);
 }
 
 static inline void detach_timer(struct timer_list *timer,
-				int clear_pending)
+		int clear_pending)
 {
 	struct list_head *entry = &timer->entry;
 
@@ -207,22 +208,19 @@ static struct tvec_base *lock_timer_base(struct timer_list *timer)
 	}
 }
 
-static inline int
+	static inline int
 __mod_timer(struct timer_list *timer, unsigned long expires,
-						bool pending_only, int pinned)
+		bool pending_only, int pinned)
 {
 	struct tvec_base *base, *new_base;
-	//unsigned long flags;
-	int ret = 0;// , cpu;
-
-	//BUG_ON(!timer->function);
+	int ret = 0, cpu;
 
 	base = lock_timer_base(timer);
 
 	if (timer_pending(timer)) {
 		detach_timer(timer, 0);
 		if (timer->expires == base->next_timer &&
-		    !tbase_get_deferrable(timer->base))
+				!tbase_get_deferrable(timer->base))
 			base->next_timer = base->timer_jiffies;
 		ret = 1;
 	} else {
@@ -230,7 +228,8 @@ __mod_timer(struct timer_list *timer, unsigned long expires,
 			goto out_unlock;
 	}
 
-	new_base = tvec_bases;
+	cpu = timer->core_id;
+	new_base = tvec_bases[cpu];
 
 	if (base != new_base) {
 		/*
@@ -243,22 +242,18 @@ __mod_timer(struct timer_list *timer, unsigned long expires,
 		if (likely(base->running_timer != timer)) {
 			/* See the comment in lock_timer_base() */
 			timer_set_base(timer, NULL);
-			//rte_spinlock_unlock(&base->lock);
 			base = new_base;
-			//rte_spinlock_lock(&base->lock);
 			timer_set_base(timer, base);
 		}
 	}
 
 	timer->expires = expires;
 	if (time_before(timer->expires, base->next_timer) &&
-	    !tbase_get_deferrable(timer->base))
+			!tbase_get_deferrable(timer->base))
 		base->next_timer = timer->expires;
 	internal_add_timer(base, timer);
 
 out_unlock:
-	//rte_spinlock_unlock(&base->lock);
-
 	return ret;
 }
 /**
@@ -309,7 +304,6 @@ int mod_timer(struct timer_list *timer, unsigned long expires)
  */
 void add_timer(struct timer_list *timer)
 {
-	//BUG_ON(timer_pending(timer));
 	mod_timer(timer, timer->expires);
 }
 
@@ -320,15 +314,13 @@ void add_timer(struct timer_list *timer)
  *
  * This is not very scalable on SMP. Double adds are not possible.
  */
-void add_timer_on(struct timer_list *timer)
+void add_timer_on(struct timer_list *timer, int cpu)
 {
-	struct tvec_base *base = tvec_bases;
+	struct tvec_base *base = tvec_bases[cpu];
 
-	//BUG_ON(timer_pending(timer) || !timer->function);
-	//rte_spinlock_lock(&base->lock);
 	timer_set_base(timer, base);
 	if (time_before(timer->expires, base->next_timer) &&
-	    !tbase_get_deferrable(timer->base))
+			!tbase_get_deferrable(timer->base))
 		base->next_timer = timer->expires;
 	internal_add_timer(base, timer);
 	/*
@@ -339,7 +331,6 @@ void add_timer_on(struct timer_list *timer)
 	 * makes sure that a CPU on the way to idle can not evaluate
 	 * the timer wheel.
 	 */
-	//rte_spinlock_unlock(&base->lock);
 }
 
 /**
@@ -356,7 +347,6 @@ void add_timer_on(struct timer_list *timer)
 int del_timer(struct timer_list *timer)
 {
 	struct tvec_base *base;
-	//unsigned long flags;
 	int ret = 0;
 
 	if (timer_pending(timer)) {
@@ -364,11 +354,10 @@ int del_timer(struct timer_list *timer)
 		if (timer_pending(timer)) {
 			detach_timer(timer, 1);
 			if (timer->expires == base->next_timer &&
-			    !tbase_get_deferrable(timer->base))
+					!tbase_get_deferrable(timer->base))
 				base->next_timer = base->timer_jiffies;
 			ret = 1;
 		}
-		//rte_spinlock_unlock(&base->lock);
 	}
 
 	return ret;
@@ -397,13 +386,11 @@ int try_to_del_timer_sync(struct timer_list *timer)
 	if (timer_pending(timer)) {
 		detach_timer(timer, 1);
 		if (timer->expires == base->next_timer &&
-		    !tbase_get_deferrable(timer->base))
+				!tbase_get_deferrable(timer->base))
 			base->next_timer = base->timer_jiffies;
 		ret = 1;
 	}
 out:
-	//rte_spinlock_unlock(&base->lock);
-
 	return ret;
 }
 
@@ -448,7 +435,6 @@ static int cascade(struct tvec_base *base, struct tvec *tv, int index)
 	 * don't have to detach them individually.
 	 */
 	list_for_each_entry_safe(timer, tmp, &tv_list, entry) {
-		//BUG_ON(tbase_get_base(timer->base) != base);
 		internal_add_timer(base, timer);
 	}
 
@@ -464,15 +450,9 @@ static int cascade(struct tvec_base *base, struct tvec *tv, int index)
  * This function cascades all vectors and executes all expired timer
  * vectors.
  */
-//static inline void __run_timers(struct tvec_base *base)
 static inline void __run_timers(struct tvec_base *base)
 {
 	struct timer_list *timer;
-	// gettimeofday(&tv, NULL);
-	//jiffies = ((unsigned long)tv.tv_sec*1000) + ((unsigned long)tv.tv_usec/1000);
-	// jiffies = tv.tv_sec;
-
-	//rte_spinlock_lock(&base->lock);
 	while (time_after_eq(jiffies, base->timer_jiffies)) {
 		struct list_head work_list;
 		struct list_head *head = &work_list;
@@ -498,69 +478,56 @@ static inline void __run_timers(struct tvec_base *base)
 
 			set_running_timer(base, timer);
 			detach_timer(timer, 1);
-			//rte_spinlock_unlock(&base->lock);
 			{
 				fn(data);
 			}
-			//rte_spinlock_lock(&base->lock);
 		}
 	}
 	set_running_timer(base, NULL);
-	//rte_spinlock_unlock(&base->lock);
 }
 
-void
-run_local_timers(__attribute__((unused)) void *arg)
+void run_local_timers(__attribute__((unused)) void *arg, uint8_t cpu)
 {
-    struct tvec_base *base = tvec_bases;
-    // gettimeofday(&tv, NULL);
-    //jiffies = ((unsigned long)tv.tv_sec*1000) + ((unsigned long)tv.tv_usec/1000);
-    // jiffies = tv.tv_sec;
-
-    if (time_after_eq(jiffies, base->timer_jiffies))
-        __run_timers(base);
+	struct tvec_base *base = tvec_bases[cpu];
+	if (time_after_eq(jiffies, base->timer_jiffies))
+		__run_timers(base);
 }
 
 static int  init_timers_for_each_thread(unsigned thread_num)
 {
-    int i, j;
-    struct tvec_base *base;
+	int i, j;
+	struct tvec_base *base;
 
-    for (i = 0; i < thread_num; i++)
-    {
-	    //base = rte_zmalloc(NULL, sizeof(struct tvec_base), 0);
-	    base = calloc(1, sizeof(struct tvec_base));
-	    if (!base)
-		    return -1;
+	for (i = 0; i < thread_num; i++)
+	{
+		base = calloc(1, sizeof(struct tvec_base));
+		if (!base)
+			return -1;
 
-	    /* Make sure that tvec_base is 2 byte aligned */
-	    if (tbase_get_deferrable(base)) {
-		    free(base);
-		    return -1;
-	    }
-	    tvec_bases = base;
-	    //rte_spinlock_init(&base->lock);
+		/* Make sure that tvec_base is 2 byte aligned */
+		if (tbase_get_deferrable(base)) {
+			free(base);
+			return -1;
+		}
+		tvec_bases[i] = base;
 
-	    for (j = 0; j < TVN_SIZE; j++) {
-		    INIT_LIST_HEAD(base->tv5.vec + j);
-		    INIT_LIST_HEAD(base->tv4.vec + j);
-		    INIT_LIST_HEAD(base->tv3.vec + j);
-		    INIT_LIST_HEAD(base->tv2.vec + j);
-	    }
+		for (j = 0; j < TVN_SIZE; j++) {
+			INIT_LIST_HEAD(base->tv5.vec + j);
+			INIT_LIST_HEAD(base->tv4.vec + j);
+			INIT_LIST_HEAD(base->tv3.vec + j);
+			INIT_LIST_HEAD(base->tv2.vec + j);
+		}
 
-	    for (j = 0; j < TVR_SIZE; j++)
-		    INIT_LIST_HEAD(base->tv1.vec + j);
+		for (j = 0; j < TVR_SIZE; j++)
+			INIT_LIST_HEAD(base->tv1.vec + j);
 
-	    // gettimeofday(&tv, NULL);
-	    // jiffies = tv.tv_sec;
+		base->timer_jiffies = jiffies;
+		base->next_timer = base->timer_jiffies;
+	}
 
-	    base->timer_jiffies = jiffies;
-	    base->next_timer = base->timer_jiffies;
-    }
+	printf("init timers ok!\n");
 
-    printf("init timers ok!\n");
-
-    return 0;
+	return 0;
 }
 
 
